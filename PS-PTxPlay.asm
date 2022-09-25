@@ -9,10 +9,8 @@
 DEFC Release	= '1'
 
 ;Conditional assembly
-;1) Version of ROUT (ZX or MSX standards)
-DEFC ZX		= 0
-DEFC MSX	= 0
-DEFC RC		= 1
+;1) Version of ROUT (only CP/M BDOS)
+
 ;2) Current position counter at (START+13)
 DEFC CurPosCounter	= 0
 ;3) Allow channels allocation bits at (START+12)
@@ -62,6 +60,9 @@ DEFC closef	= 16
 DEFC readf	= 20
 DEFC todma	= $80		;this is the size of the read to DMA buffer
 
+DEFC ymreg	= $d8		;entry to RC2014 YM/AY register array
+DEFC ymdat	= $d0		;and data port for when we need to write to selected register
+
 SECTION code_user
 
 ORG $100
@@ -72,8 +73,8 @@ ORG $100
 	call	open
 	ld	de,nofile	;just in case of error
 	inc	a
-	jp	z,badfile	;no file found if zero
-	ld	a,0		;have to do this every file open
+	jp	Z,badfile	;no file found if zero
+	xor	a		;have to do this every file open
 	ld	(sfcbcr),a	;set current record to 0 as CP/M does not
 	ld	de,MDLADDR	;it is there but got corrupted for some reason
 	ld	(next_dest),de	;we now have where the file is copied too and where it is expected.
@@ -122,36 +123,22 @@ ORG $100
 	ld	c,readf
 	jp	bdos
 
-.nofile
-	db	"no file of that name",13,10,$24
-.success
-	db	"file read to memory, will play now",13,10,10,10,$24
-.next_dest
-	dw	MDLADDR
-.oldstack
-	dw	$0000
-
-	ds	$40		;z80 stack grows down
-.stack
-
-; END OF MM additions
-; ld hl, startupstr
-; call print
-;Test codes (commented)
 .begin
 	;ld A,2 ;PT2,ABC,Looped
-	ld A,0
-	ld (START+12),A
+	ld a,0
+	ld (START+12),a
 	call START
-	ld hl,startupstr
-	call print
+	ld de,startupstr	;startup message at this location
+	ld c,printf		;print it
+	call bdos
 ._LP
 	call START+6
 	call pause
-
 	jp _LP
-	ld hl,endstr
-	call print
+
+	ld de,endstr		;end message at this location
+	ld c,printf		;print it
+	call bdos
 	jp START+9
 
 DEFC TonA	= 0
@@ -1484,7 +1471,7 @@ IF ACBBAC
 	LD A,(SETUP)
 	AND 12
 	JR Z,ABC
-	ADD A,CHTABLE
+	ADD A,CHTABLE%256
 	LD E,A
 	ADC A,CHTABLE/256
 	SUB E
@@ -1537,15 +1524,14 @@ IF ACBBAC
 .ABC
 ENDIF
 
-IF RC
 	XOR A
-	LD C,$D8
+	LD C,ymreg
 	LD HL,AYREGS
 .LOUT
 	OUT (C),A
-	LD C,$D0
+	LD C,ymdat
 	OUTI
-	LD C,$D8
+	LD C,ymreg
 	INC A
 	CP 13
 	JP NZ,LOUT
@@ -1553,100 +1539,18 @@ IF RC
 	LD A,(HL)
 	AND A
 	RET M
-	LD C,$D0
+	LD C,ymdat
 	OUT (C),A
 	RET
-ENDIF
-
-IF ZX
-	XOR A
-	LD DE,$FFBF
-	LD BC,$FFFD
-	LD HL,AYREGS
-.LOUT
-	OUT (C),A
-	LD B,E
-	OUTI
-	LD B,D
-	INC A
-	CP 13
-	JP NZ,LOUT
-	OUT (C),A
-	LD A,(HL)
-	AND A
-	RET M
-	LD B,E
-	OUT (C),A
-	RET
-ENDIF
-
-IF MSX
-;MSX version of ROUT (c)Dioniso
-	XOR A
-	LD C,$A0
-	LD HL,AYREGS
-.LOUT
-	OUT (C),A
-	INC C
-	OUTI
-	DEC C
-	INC A
-	CP 13
-	JP NZ,LOUT
-	OUT (C),A
-	LD A,(HL)
-	AND A
-	RET M
-	INC C
-	OUT (C),A
-	RET
-ENDIF
 
 IF ACBBAC
 DEFC CHTABLE = ASMPC - 4
 	DB 4,5,15,%001001,0,7,7,%100100
 ENDIF
 
-.TX
-	push hl			; MM calls to CP/M kill HL and we need it
-	push af
-;txbusy  in a,($80)		; read serial status
-;        bit 1,a		; check status bit 1
-;        jp z,txbusy		; loop if zero (serial is busy)
-;        pop af
-;        out ($81),a		; transmit the character
-;        ret
-; MM added print routine for output via CP/M BDOS.
-	push	bc		; MM just in case the caller needs them intact
-	push	de		; MM going to use C and E for CP/M call.
-	ld	c,2		; MM call BDOS with console out
-	ld	e,a		; MM e must contain character
-	call	bdos		; MM go do it
-	pop	de
-	pop	bc
-	pop	af
-	pop	hl
-	ret
-
-.print
-	ld a,(hl)
-	or a
-	ret z
-	call TX
-	inc hl
-	jp print
-
-.startupstr
-	DB "Megabanghra 3000.",10,13,0
-.loopstr
-	DB "*",10,13,0
-.endstr
-	DB "the end.",10,13,0
-
-.pause				; MM put in a test for character at terminal - RAW I/O called
+.pause				; MM put in a test for character at terminal - RAW CP/M I/O called
 	push bc
 	push de
-	push af
 
 	LD BC,$1500		;Loads BC with hex 1500
 	; outer: LD DE,$1000	;Loads DE with hex 1000
@@ -1667,14 +1571,10 @@ ENDIF
 	cp a,0			; MM 'a' will be zero if nothing there.
 	jp NZ,quit		; MM quit if there is a character
 
-	pop af
 	pop de
 	pop bc
 
 	ret			;Return from call to this subroutine
-
-DEFC ymreg	= $d8		; MM entry to YM register array
-DEFC ymdat	= $d0		; MM and data port for when we need to write to selected register.
 
 .quit				; MM a key was pressed, don't care which, just exit.
 				; MM set volume of YM2149 to off before exiting
@@ -1691,11 +1591,26 @@ DEFC ymdat	= $d0		; MM and data port for when we need to write to selected regis
 	ld a,0
 	out (ymdat),a		; MM should be all quiet now
 
+	ld de,endstr		;end message at this location
+	ld c,printf		;print it
+	call bdos
+
 	ld c,0			; MM quit to CP/M command prompt
 	jp bdos
 
 
 SECTION rodata_user
+
+.success
+	db "file read to memory, will play now",13,10,10,$24
+.nofile
+	db "no file of that name",13,10,$24
+.startupstr
+	db "Megabanghra 3000",13,10,10,$24
+.loopstr
+	db "*",13,10,$24
+.endstr
+	db "the end",13,10,$24
 
 .NT_DATA
 	DB (T_NEW_0-T1_)*2
@@ -1804,8 +1719,9 @@ SECTION data_user
 .VARS
 
 ;ChannelsVars
+
 DEFC CHP	= 29
-;reset group
+
 DEFC CHP_PsInOr	= 0
 DEFC CHP_PsInSm	= 1
 DEFC CHP_CrAmSl	= 2
@@ -1815,8 +1731,6 @@ DEFC CHP_TSlCnt	= 5
 DEFC CHP_CrTnSl	= 6
 DEFC CHP_TnAcc	= 8
 DEFC CHP_COnOff	= 10
-;reset group
-
 DEFC CHP_OnOffD	= 11
 
 ;IX for PTDECOD here (+12)
@@ -1843,6 +1757,11 @@ DEFC CHP_Volume	= 28
 	DS CHP
 
 ;GlobalVars
+
+.next_dest
+	DW MDLADDR
+.oldstack
+	DW $0000
 .DelyCnt
 	DB 0
 .CurESld
@@ -1885,6 +1804,9 @@ DEFC VAR0END	= VT_+16	;INIT zeroes from VARS to VAR0END-1
 
 DEFC VARSEND	= ASMPC
 
+	ds $40		;z80 stack grows down
+.stack
+
 DEFC MDLADDR	= ASMPC
 
 ;Release 0 steps:
@@ -1922,10 +1844,10 @@ DEFC MDLADDR	= ASMPC
 ;KickDB/Fatal Snipe	1720		9880
 
 ;Size (build for CP/M):
-;Code $08F5 bytes
-;RO Data $0088 bytes
-;Variables $021D bytes (can be stripped)
-;Size in RAM $8F5+$088+$21D=$B9A (2970) bytes
+;Code $0840 bytes
+;RO Data $00E7 bytes
+;Variables $0261 bytes (can be stripped)
+;Size in RAM $8F5+$088+$21D=$B88 (2952) bytes
 
 ;Notes:
 ;Pro Tracker 3.4r can not be detected by header, so PT3.4r tone
