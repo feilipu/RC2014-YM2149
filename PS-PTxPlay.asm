@@ -9,8 +9,9 @@
 DEFC Release	= '1'
 
 ;Conditional assembly
-;1) Version of ROUT (only CP/M BDOS)
-
+;1) Version of ROUT (only CP/M BDOS) for RC2014 YM/AY Module Revision 5 or earlier
+;   Otherwise for RC2014 YM/AY Module Revision 6 or later using MSX addressing
+DEFC REV5	= 1
 ;2) Current position counter at (START+13)
 DEFC CurPosCounter	= 0
 ;3) Allow channels allocation bits at (START+12)
@@ -60,8 +61,13 @@ DEFC closef	= 16
 DEFC readf	= 20
 DEFC todma	= $80		;this is the size of the read to DMA buffer
 
-DEFC ymreg	= $d8		;entry to RC2014 YM/AY register array
+IF REV5
+DEFC ymreg	= $d8		;entry to RC2014 YM/AY register array for Revision 5 or earlier
 DEFC ymdat	= $d0		;and data port for when we need to write to selected register
+ELSE 
+DEFC ymreg	= $a0		;entry to MSX or RC2014 YM/AY register array for Revision 6 or later
+DEFC ymdat	= $a1		;and data port for when we need to write to selected register
+ENDIF
 
 SECTION code_user
 
