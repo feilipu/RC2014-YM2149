@@ -6,21 +6,21 @@
 ;z88dk-z80asm  PS-PTxPlay.asm -m -l -b
 
 ;Release number
-DEFC Release = '1'
+DEFC Release	= '1'
 
 ;Conditional assembly
 ;1) Version of ROUT (ZX or MSX standards)
-DEFC ZX			= 0
-DEFC MSX		= 0
-DEFC RC			= 1
-;2) Current position counter at (START+11)
+DEFC ZX		= 0
+DEFC MSX	= 0
+DEFC RC		= 1
+;2) Current position counter at (START+13)
 DEFC CurPosCounter	= 0
-;3) Allow channels allocation bits at (START+10)
-DEFC ACBBAC		= 0
+;3) Allow channels allocation bits at (START+12)
+DEFC ACBBAC	= 0
 ;4) Allow loop checking and disabling
-DEFC LoopChecker	= 1
+DEFC LoopChecker= 1
 ;5) Insert official identificator
-DEFC Id			= 1
+DEFC Id		= 1
 
 ;Features
 ;--------
@@ -62,6 +62,7 @@ DEFC closef	= 16
 DEFC readf	= 20
 DEFC todma	= $80		;this is the size of the read to DMA buffer
 
+SECTION code_user
 
 ORG $100
 
@@ -71,7 +72,7 @@ ORG $100
 	call	open
 	ld	de,nofile	;just in case of error
 	inc	a
-	jr	z,badfile	;no file found if zero
+	jp	z,badfile	;no file found if zero
 	ld	a,0		;have to do this every file open
 	ld	(sfcbcr),a	;set current record to 0 as CP/M does not
 	ld	de,MDLADDR	;it is there but got corrupted for some reason
@@ -81,14 +82,14 @@ ORG $100
 	ld	de,sfcb		;fcb needed prior to the call
 	call	read
 	or	a		;this will set zero flag unless it is eofile...
-	jr	nz,eofile
+	jp	nz,eofile
 
 	ld	hl,dbuff	;ok we need to copy from DMA to where PTX-player expects it to be
 	ld	de,(next_dest)	;sets the de to current end of address
 	ld	bc,todma	;CP/M only gives us 128 bytes at a time
 	ldir			;ldir does the xfer for us
 	ld	(next_dest),de	;DE is now 128 bytes higher, and, we can use to show where we got to
-	jr	r_loop
+	jp	r_loop
 
 .eofile
 	ld	de,sfcb
@@ -130,35 +131,28 @@ ORG $100
 .oldstack
 	dw	$0000
 
-	db	0,0,0,0,0,0,0,0,0,0,0,0,0,0	;some of this gets overwritten for some strange reason.
+	ds	$40		;z80 stack grows down
 .stack
-	ds	$80
 
 ; END OF MM additions
 ; ld hl, startupstr
 ; call print
 ;Test codes (commented)
 .begin
-	;LD A,2 ;PT2,ABC,Looped
-	LD A, 0
-	LD (START+10),A
-	CALL START
+	;ld A,2 ;PT2,ABC,Looped
+	ld A,0
+	ld (START+12),A
+	call START
 	ld hl,startupstr
 	call print
-;	EI
-;_LP	HALT
 ._LP
-	CALL START+5
+	call START+6
 	call pause
 
-	; XOR A
-	; IN A,($FE)
-	; CPL
-	; AND 15
-	JR _LP
+	jp _LP
 	ld hl,endstr
 	call print
-	JR START+8
+	jp START+9
 
 DEFC TonA	= 0
 DEFC TonB	= 2
@@ -174,16 +168,16 @@ DEFC EnvTp	= 13
 ;Entry and other points
 ;START initialize playing of module at MDLADDR
 ;START+3 initialization with module address in HL
-;START+5 play one quark
-;START+8 mute
-;START+10 setup and status flags
-;START+11 current position value (byte) (optional)
+;START+6 play one quark
+;START+9 mute
+;START+12 setup and status flags
+;START+13 current position value (byte) (optional)
 
 .START
 	LD HL,MDLADDR
-	JR INIT
+	JP INIT
 	JP PLAY
-	JR MUTE
+	JP MUTE
 
 .SETUP
 	DB 0
@@ -194,10 +188,11 @@ DEFC EnvTp	= 13
 			;bits2-3: %00-ABC, %01 ACB, %10 BAC (optional);
 			;bits4-6 are not used
 			;bit7 is set each time, when loop point is passed
-			;(optional)
+
 IF CurPosCounter
 .CurPos
 	DB 0		;for visualization only (i.e. no need for playing)
+			;(optional)
 ENDIF
 
 ;Identifier
@@ -228,9 +223,9 @@ ENDIF
 
 .INIT
 ;HL - AddressOfModule
-	LD A,(START+10)
+	LD A,(START+12)
 	AND 2
-	JR NZ,INITPT2
+	JP NZ,INITPT2
 
 	CALL SETMDAD
 	PUSH HL
@@ -265,9 +260,9 @@ ENDIF
 	LD (SamPtrs),HL
 	LD A,(IX+13-100) ;EXTRACT VERSION NUMBER
 	SUB $30
-	JR C,L20
+	JP C,L20
 	CP 10
-	JR C,L21
+	JP C,L21
 .L20
 	LD A,6
 .L21
@@ -291,7 +286,7 @@ ENDIF
 	LD BC,PT3PD
 	LD HL,0
 	LD DE,PT3EMPTYORN
-	JR INITCOMMON
+	JP INITCOMMON
 
 .INITPT2
 	LD A,(HL)
@@ -388,7 +383,7 @@ ENDIF
 	LD A,L
 	LD (BC),A
 	DEC BC
-	SUB $F8*2
+	SUB +($F8*2)%256
 	JR NZ,TP_0
 
 IF LoopChecker
@@ -448,7 +443,7 @@ ENDIF
 	ADD HL,BC
 
 	LD A,(DE)
-	ADD A,T_
+	ADD A,T_%256
 	LD C,A
 	ADC A,T_/256
 	SUB C
@@ -498,7 +493,7 @@ ENDIF
 	POP DE
 
 	LD A,E
-	CP TCOLD_1
+	CP TCOLD_1%256
 	JR NZ,CORR_1
 	LD A,$FD
 	LD (NT_+$2E),A
@@ -529,7 +524,7 @@ ENDIF
 
 ;VolTableCreator (c) Ivan Roshin
 ;A - VersionForVolumeTable (0..4 - 3.xx..3.4x;
-			   ;5.. - 2.x,3.5x..3.6x..VTII1.0)
+			;5.. - 2.x,3.5x..3.6x..VTII1.0)
 
 	CP 5
 	LD HL,$11
@@ -1182,7 +1177,7 @@ DEFC MDADDR1 = ASMPC+1
 .CH_NOAC
 	EX DE,HL
 	EX AF,AF'
-	ADD A,NT_
+	ADD A,NT_%256
 	LD L,A
 	ADC A,NT_/256
 	SUB L
@@ -1254,7 +1249,7 @@ DEFC MDADDR1 = ASMPC+1
 	LD A,15
 .CH_VOL
 	OR (IX+CHP_Volume)
-	ADD A,VT_
+	ADD A,VT_%256
 	LD L,A
 	ADC A,VT_/256
 	SUB L
@@ -1553,7 +1548,7 @@ IF RC
 	LD C,$D8
 	INC A
 	CP 13
-	JR NZ,LOUT
+	JP NZ,LOUT
 	OUT (C),A
 	LD A,(HL)
 	AND A
@@ -1575,7 +1570,7 @@ IF ZX
 	LD B,D
 	INC A
 	CP 13
-	JR NZ,LOUT
+	JP NZ,LOUT
 	OUT (C),A
 	LD A,(HL)
 	AND A
@@ -1597,7 +1592,7 @@ IF MSX
 	DEC C
 	INC A
 	CP 13
-	JR NZ,LOUT
+	JP NZ,LOUT
 	OUT (C),A
 	LD A,(HL)
 	AND A
@@ -1611,6 +1606,96 @@ IF ACBBAC
 DEFC CHTABLE = ASMPC - 4
 	DB 4,5,15,%001001,0,7,7,%100100
 ENDIF
+
+.TX
+	push hl			; MM calls to CP/M kill HL and we need it
+	push af
+;txbusy  in a,($80)		; read serial status
+;        bit 1,a		; check status bit 1
+;        jp z,txbusy		; loop if zero (serial is busy)
+;        pop af
+;        out ($81),a		; transmit the character
+;        ret
+; MM added print routine for output via CP/M BDOS.
+	push	bc		; MM just in case the caller needs them intact
+	push	de		; MM going to use C and E for CP/M call.
+	ld	c,2		; MM call BDOS with console out
+	ld	e,a		; MM e must contain character
+	call	bdos		; MM go do it
+	pop	de
+	pop	bc
+	pop	af
+	pop	hl
+	ret
+
+.print
+	ld a,(hl)
+	or a
+	ret z
+	call TX
+	inc hl
+	jp print
+
+.startupstr
+	DB "Megabanghra 3000.",10,13,0
+.loopstr
+	DB "*",10,13,0
+.endstr
+	DB "the end.",10,13,0
+
+.pause				; MM put in a test for character at terminal - RAW I/O called
+	push bc
+	push de
+	push af
+
+	LD BC,$1500		;Loads BC with hex 1500
+	; outer: LD DE,$1000	;Loads DE with hex 1000
+	; inner: DEC DE		;Decrements DE
+	; LD A,D		;Copies D into A
+	; OR E			;Bitwise OR of E with A (now, A = D | E)
+	; JP NZ,inner		;Jumps back to Inner: label if A is not zero
+.outer
+	dec bc			;Decrements BC
+	ld a,b			;Copies B into A
+	or c			;Bitwise OR of C with A (now, A = B | C)
+	jp NZ,outer		;Jumps back to Outer: label if A is not zero
+
+
+	ld c,6			; MM going to check for a console input
+	ld e,$ff		; MM tell CP/M we want a character
+	call bdos
+	cp a,0			; MM 'a' will be zero if nothing there.
+	jp NZ,quit		; MM quit if there is a character
+
+	pop af
+	pop de
+	pop bc
+
+	ret			;Return from call to this subroutine
+
+DEFC ymreg	= $d8		; MM entry to YM register array
+DEFC ymdat	= $d0		; MM and data port for when we need to write to selected register.
+
+.quit				; MM a key was pressed, don't care which, just exit.
+				; MM set volume of YM2149 to off before exiting
+	ld a,8			; MM the channel a volume register
+	out (ymreg),a		; MM select
+	ld a,0			; MM and volume zero, repeat for channel B and C.
+	out (ymdat),a 
+	ld a,9			; MM channel B volume register
+	out (ymreg),a
+	ld a,0
+	out (ymdat),a 
+	ld  a,$0A		; MM as per data sheet descript. Ch C volume register is 0A not 10.
+	out (ymreg),a
+	ld a,0
+	out (ymdat),a		; MM should be all quiet now
+
+	ld c,0			; MM quit to CP/M command prompt
+	jp bdos
+
+
+SECTION rodata_user
 
 .NT_DATA
 	DB (T_NEW_0-T1_)*2
@@ -1661,7 +1746,7 @@ DEFC PT3EMPTYORN = ASMPC-1
 ;first 12 values of tone tables (packed)
 
 .T_PACK
-	DB $06EC*2/256,$06EC*2
+	DB +($06EC*2)/256,+($06EC*2)%256
 	DB $0755-$06EC
 	DB $07C5-$0755
 	DB $083B-$07C5
@@ -1673,7 +1758,7 @@ DEFC PT3EMPTYORN = ASMPC-1
 	DB $0BA4-$0AFC
 	DB $0C55-$0BA4
 	DB $0D10-$0C55
-	DB $066D*2/256,$066D*2
+	DB +($066D*2)/256,+($066D*2)%256
 	DB $06CF-$066D
 	DB $0737-$06CF
 	DB $07A4-$0737
@@ -1686,7 +1771,7 @@ DEFC PT3EMPTYORN = ASMPC-1
 	DB $0B73-$0ACF
 	DB $0C22-$0B73
 	DB $0CDA-$0C22
-	DB $0704*2/256,$0704*2
+	DB +($0704*2)/256,+($0704*2)%256
 	DB $076E-$0704
 	DB $07E0-$076E
 	DB $0858-$07E0
@@ -1698,7 +1783,7 @@ DEFC PT3EMPTYORN = ASMPC-1
 	DB $0BCC-$0B22
 	DB $0C80-$0BCC
 	DB $0D3E-$0C80
-	DB $07E0*2/256,$07E0*2
+	DB +($07E0*2)/256,+($07E0*2)%256
 	DB $0858-$07E0
 	DB $08E0-$0858
 	DB $0960-$08E0
@@ -1711,7 +1796,7 @@ DEFC PT3EMPTYORN = ASMPC-1
 	DB $0E10-$0D60
 	DB $0EF8-$0E10
 
-
+SECTION data_user
 
 ;vars from here can be stripped
 ;you can move VARS to any other address
@@ -1775,9 +1860,9 @@ DEFC CHP_Volume	= 28
 .VT_
 	DS 256			;CreatedVolumeTableAddress
 
-DEFC EnvBase 	= VT_+14
+DEFC EnvBase	= VT_+14
 
-DEFC T1_ 	= VT_+16	;Tone tables data depacked here
+DEFC T1_	= VT_+16	;Tone tables data depacked here
 
 DEFC T_OLD_1	= T1_
 DEFC T_OLD_2	= T_OLD_1+24
@@ -1788,107 +1873,17 @@ DEFC T_NEW_1	= T_OLD_1
 DEFC T_NEW_2	= T_NEW_0+24
 DEFC T_NEW_3	= T_OLD_3
 
-DEFC PT2EMPTYORN = VT_+31 ;1,0,0 sequence
+DEFC PT2EMPTYORN = VT_+31	;1,0,0 sequence
 
 .NT_
-	DS 192 			;CreatedNoteTableAddress
+	DS 192			;CreatedNoteTableAddress
 
 ;local var
-DEFC Ampl 	= AYREGS+AmplC
+DEFC Ampl	= AYREGS+AmplC
 
-DEFC VAR0END 	= VT_+16 ;INIT zeroes from VARS to VAR0END-1
+DEFC VAR0END	= VT_+16	;INIT zeroes from VARS to VAR0END-1
 
-DEFC VARSEND 	= ASMPC
-
-
-
-
-.TX
-	push hl			; MM calls to CP/M kill HL and we need it
-	push af
-;txbusy  in a,($80)		; read serial status
-;        bit 1,a		; check status bit 1
-;       jr z, txbusy		; loop if zero (serial is busy)
-;        pop af
-;        out ($81), a		; transmit the character
-;        ret
-; MM added print routine for output via CP/M BDOS.
-	push	bc		; MM just in case the caller needs them intact
-	push	de		; MM going to use C and E for CP/M call.
-	ld	c,2		; MM call BDOS with console out
-	ld	e,a 		; MM e must contain character
-	call	bdos		; MM go do it
-	pop	de
-	pop	bc
-	pop	af
-	pop	hl
-	ret
-
-.print
-	ld a, (hl)
-	or a
-	ret z
-	call TX
-	inc hl
-	jp print
-
-.startupstr
-	DB "Megabanghra 3000.",10,13,0
-.loopstr
-	DB "*",10,13,0
-.endstr
-	DB "the end.",10,13,0
-
-.pause				; MM put in a test for character at terminal - RAW I/O called
-	push bc
-	push de
-	push af
-
-	LD BC, $1500		;Loads BC with hex 1500
-	; outer: LD DE,$1000	;Loads DE with hex 1000
-	; inner: DEC DE		;Decrements DE
-	; LD A,D		;Copies D into A
-	; OR E			;Bitwise OR of E with A (now, A = D | E)
-	; JP NZ,inner		;Jumps back to Inner: label if A is not zero
-.outer
-	DEC BC			;Decrements BC
-	LD A,B			;Copies B into A
-	OR C			;Bitwise OR of C with A (now, A = B | C)
-	JP NZ,outer		;Jumps back to Outer: label if A is not zero
-
-
-	ld c,6			; MM going to check for a console input
-	ld e,$ff		; MM tell CP/M we want a character
-	call bdos
-	cp a,0			; MM 'a' will be zero if nothing there.
-	jr nz,quit		; MM quit if there is a character
-
-	pop af
-	pop de
-	pop bc
-
-	RET			;Return from call to this subroutine
-
-DEFC ymreg	= $d8		; MM entry to YM register array
-DEFC ymdat	= $d0		; MM and data port for when we need to write to selected register.
-
-.quit				; MM a key was pressed, don't care which, just exit.
-				; MM set volume of YM2149 to off before exiting
-	ld a,8			; MM the channel a volume register
-	out (ymreg),a 		; MM select
-	ld a,0			; MM and volume zero, repeat for channel B and C.
-	out (ymdat),a 
-	ld a,9			; MM channel B volume register
-	out (ymreg),a
-	ld a,0
-	out (ymdat),a 
-	ld  a,$0A 		; MM as per data sheet descript. Ch C volume register is 0A not 10.
-	out (ymreg),a
-	ld a,0
-	out (ymdat),a 		; MM should be all quiet now
-
-	ld c,0			; MM quit to CP/M command prompt
-	jp bdos
+DEFC VARSEND	= ASMPC
 
 DEFC MDLADDR	= ASMPC
 
@@ -1926,10 +1921,11 @@ DEFC MDLADDR	= ASMPC
 ;GUEST 4/Alex Job	2824		9352
 ;KickDB/Fatal Snipe	1720		9880
 
-;Size (minimal build for ZX Spectrum):
-;Code block $7B9 bytes
-;Variables $21D bytes (can be stripped)
-;Size in RAM $7B9+$21D=$9D6 (2518) bytes
+;Size (build for CP/M):
+;Code $08F5 bytes
+;RO Data $0088 bytes
+;Variables $021D bytes (can be stripped)
+;Size in RAM $8F5+$088+$21D=$B9A (2970) bytes
 
 ;Notes:
 ;Pro Tracker 3.4r can not be detected by header, so PT3.4r tone
